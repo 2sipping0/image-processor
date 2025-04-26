@@ -1,0 +1,322 @@
+<!-- static/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust Image Processor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        input, select, button {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .hidden {
+            display: none;
+        }
+        .image-preview {
+            max-width: 100%;
+            margin-top: 20px;
+        }
+        .operation-params {
+            margin-top: 10px;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        #comparison {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .image-container {
+            flex: 1;
+            text-align: center;
+        }
+        .image-container img {
+            max-width: 100%;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <h1>Rust Image Processor</h1>
+    
+    <div class="container">
+        <div class="card">
+            <h2>Upload Image</h2>
+            <form id="upload-form">
+                <input type="file" id="image-input" name="image" accept="image/*" required>
+                <button type="submit">Upload</button>
+            </form>
+            <p id="upload-message"></p>
+            <img id="original-preview" class="image-preview hidden" alt="Original image preview">
+        </div>
+
+        <div id="process-card" class="card hidden">
+            <h2>Process Image</h2>
+            <div>
+                <label for="operation">Select Operation:</label>
+                <select id="operation" name="operation">
+                    <option value="resize">Resize</option>
+                    <option value="grayscale">Grayscale</option>
+                    <option value="blur">Blur</option>
+                    <option value="brighten">Brighten</option>
+                    <option value="rotate">Rotate</option>
+                    <option value="flip">Flip</option>
+                </select>
+            </div>
+
+            <div id="resize-params" class="operation-params">
+                <label for="width">Width:</label>
+                <input type="number" id="width" name="width" min="1" value="300">
+                <label for="height">Height:</label>
+                <input type="number" id="height" name="height" min="1" value="300">
+            </div>
+
+            <div id="blur-params" class="operation-params hidden">
+                <label for="sigma">Sigma:</label>
+                <input type="number" id="sigma" name="sigma" min="0.1" step="0.1" value="1.0">
+            </div>
+
+            <div id="brighten-params" class="operation-params hidden">
+                <label for="value">Value:</label>
+                <input type="number" id="value" name="value" value="10">
+            </div>
+
+            <div id="rotate-params" class="operation-params hidden">
+                <label for="degrees">Degrees:</label>
+                <select id="degrees" name="degrees">
+                    <option value="90">90°</option>
+                    <option value="180">180°</option>
+                    <option value="270">270°</option>
+                </select>
+            </div>
+
+            <div id="flip-params" class="operation-params hidden">
+                <label for="direction">Direction:</label>
+                <select id="direction" name="direction">
+                    <option value="horizontal">Horizontal</option>
+                    <option value="vertical">Vertical</option>
+                </select>
+            </div>
+
+            <button id="process-button" type="button">Process Image</button>
+            <p id="process-message"></p>
+            
+            <div id="comparison" class="hidden">
+                <div class="image-container">
+                    <h3>Original</h3>
+                    <img id="comparison-original" alt="Original image">
+                </div>
+                <div class="image-container">
+                    <h3>Processed</h3>
+                    <img id="processed-preview" alt="Processed image">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let uploadedFilename = '';
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadForm = document.getElementById('upload-form');
+            const processButton = document.getElementById('process-button');
+            const operationSelect = document.getElementById('operation');
+
+            uploadForm.addEventListener('submit', handleUpload);
+            processButton.addEventListener('click', processImage);
+            operationSelect.addEventListener('change', toggleOperationParams);
+
+            // Initial parameter visibility
+            toggleOperationParams();
+        });
+
+        function handleUpload(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const fileInput = document.getElementById('image-input');
+            const uploadMessage = document.getElementById('upload-message');
+            
+            if (fileInput.files.length === 0) {
+                uploadMessage.textContent = 'Please select an image to upload.';
+                uploadMessage.className = 'error';
+                return;
+            }
+            
+            formData.append('image', fileInput.files[0]);
+            
+            uploadMessage.textContent = 'Uploading...';
+            uploadMessage.className = '';
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    uploadMessage.textContent = 'Upload successful!';
+                    uploadMessage.className = 'success';
+                    uploadedFilename = data.original_filename;
+                    
+                    // Show the original image preview
+                    const originalPreview = document.getElementById('original-preview');
+                    originalPreview.src = `/uploads/${uploadedFilename}`;
+                    originalPreview.classList.remove('hidden');
+                    
+                    // Show the process card
+                    document.getElementById('process-card').classList.remove('hidden');
+                    
+                    // Update comparison original image
+                    document.getElementById('comparison-original').src = `/uploads/${uploadedFilename}`;
+                } else {
+                    uploadMessage.textContent = data.message || 'Upload failed.';
+                    uploadMessage.className = 'error';
+                }
+            })
+            .catch(error => {
+                uploadMessage.textContent = `Error: ${error.message}`;
+                uploadMessage.className = 'error';
+            });
+        }
+
+        function processImage() {
+            if (!uploadedFilename) {
+                alert('Please upload an image first.');
+                return;
+            }
+            
+            const operation = document.getElementById('operation').value;
+            const processMessage = document.getElementById('process-message');
+            
+            let params = [];
+            
+            // Get operation-specific parameters
+            switch (operation) {
+                case 'resize':
+                    params.push(document.getElementById('width').value);
+                    params.push(document.getElementById('height').value);
+                    break;
+                case 'blur':
+                    params.push(document.getElementById('sigma').value);
+                    break;
+                case 'brighten':
+                    params.push(document.getElementById('value').value);
+                    break;
+                case 'rotate':
+                    params.push(document.getElementById('degrees').value);
+                    break;
+                case 'flip':
+                    params.push(document.getElementById('direction').value);
+                    break;
+            }
+            
+            processMessage.textContent = 'Processing...';
+            processMessage.className = '';
+            
+            fetch('/process', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filename: uploadedFilename,
+                    operation: operation,
+                    params: params
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    processMessage.textContent = data.message;
+                    processMessage.className = 'success';
+                    
+                    // Show the processed image
+                    const processedPreview = document.getElementById('processed-preview');
+                    processedPreview.src = `/processed/${data.processed_filename}`;
+                    
+                    // Show the comparison section
+                    document.getElementById('comparison').classList.remove('hidden');
+                } else {
+                    processMessage.textContent = data.message;
+                    processMessage.className = 'error';
+                }
+            })
+            .catch(error => {
+                processMessage.textContent = `Error: ${error.message}`;
+                processMessage.className = 'error';
+            });
+        }
+
+        function toggleOperationParams() {
+            const operation = document.getElementById('operation').value;
+            
+            // Hide all parameter groups first
+            document.querySelectorAll('.operation-params').forEach(el => {
+                el.classList.add('hidden');
+            });
+            
+            // Show the relevant parameter group
+            switch (operation) {
+                case 'resize':
+                    document.getElementById('resize-params').classList.remove('hidden');
+                    break;
+                case 'blur':
+                    document.getElementById('blur-params').classList.remove('hidden');
+                    break;
+                case 'brighten':
+                    document.getElementById('brighten-params').classList.remove('hidden');
+                    break;
+                case 'rotate':
+                    document.getElementById('rotate-params').classList.remove('hidden');
+                    break;
+                case 'flip':
+                    document.getElementById('flip-params').classList.remove('hidden');
+                    break;
+            }
+        }
+    </script>
+</body>
+</html>
